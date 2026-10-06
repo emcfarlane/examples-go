@@ -1,64 +1,57 @@
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-  exhaustruct:
-    include:
-      # No zero values for param structs.
-      - 'connect-examples-go\..*[pP]arams'
-  forbidigo:
-    forbid:
-      # Unlike most Buf projects, we're allowing the standard library's log
-      # package: this is a demo service, so let's keep it simple.
-      - '^fmt\.Print'
-      - '^print$'
-      - '^println$'
-      - '^panic$'
-  gci:
-    sections:
-      - standard # Standard section: captures all standard packages.
-      - default # Default section: contains all imports that could not be matched to another section type.
-      - prefix(connect-examples-go) # Custom section: groups all imports with the specified Prefix.
-  godox:
-    # TODO, OPT, etc. comments are fine to commit. Use FIXME comments for
-    # temporary hacks, and use godox to prevent committing them.
-    keywords: [FIXME]
-  varnamelen:
-    ignore-decls:
-      - T any
-      - i int
-      - wg sync.WaitGroup
+version: "2"
 linters:
-  enable-all: true
+  default: all
   disable:
-    - copyloopvar       # only valid for go v1.22 and above
-    - cyclop            # covered by gocyclo
-    - depguard          # in golangci-lint v1.53.0+ default requires only stdlib deps
-    - exportloopref     # deprecated in golangci v1.60.2
-    - execinquery       # deprecated in golangci v1.58 
-    - funlen            # rely on code review to limit function length
-    - gocognit          # dubious "cognitive overhead" quantification
-    - gofumpt           # prefer standard gofmt
-    - goimports         # rely on gci instead
-    - gomnd             # deprecated in golangci v1.58 in favor of mnd
-    - mnd               # some unnamed constants are okay
-    - intrange          # only valid for go v1.22 and above
-    - ireturn           # "accept interfaces, return structs" isn't ironclad
-    - lll               # don't want hard limits for line length
-    - maintidx          # covered by gocyclo
-    - nlreturn          # generous whitespace violates house style
-    - paralleltest      # in this project, it's not worth making all tests parallel
-    - testpackage       # internal tests are fine
-    - tparallel         # in this project, it's not worth making all tests parallel
-    - wrapcheck         # don't _always_ need to wrap errors
-    - wsl               # generous whitespace violates house style
-issues:
-  exclude-dirs-use-default: false
-  exclude:
-    # Don't ban use of fmt.Errorf to create new errors, but the remaining
-    # checks from err113 are useful.
-    - "do not define dynamic errors.*"
-  exclude-rules:
-    # It's much more convenient to keep eliza's matching and response data as
-    # globals rather than config.
-    - linters: [gochecknoglobals]
-      path: internal/eliza/globals.go
+    # These three are superseded by their _v2/_v5 successors, which `default:
+    # all` already enables. Disabling the originals avoids double-reporting.
+    - exhaustruct     # replaced by exhaustruct_v5 in golangci v2.13
+    - gomodguard      # replaced by gomodguard_v2 in golangci v2.12
+    - wsl             # replaced by wsl_v5 in golangci v2.2
+  settings:
+    depguard:
+      rules:
+        all:
+          files: ['$all']
+          deny:
+            - pkg: github.com/pkg/errors
+              desc: use the standard library's errors package
+            - pkg: go.uber.org/zap
+              desc: use the standard library's log package
+            - pkg: github.com/rs/zerolog
+              desc: use the standard library's log package
+            - pkg: github.com/sirupsen/logrus
+              desc: use the standard library's log package
+            - pkg: math/rand$
+              desc: use math/rand/v2
+    errcheck:
+      check-type-assertions: true
+    forbidigo:
+      # Unlike most Buf projects, we're allowing the standard library's log
+      # package: this is a demo service, so let's keep it simple. That's why
+      # there's no '^log\.' pattern here.
+      forbid:
+        # Setting `forbid` at all replaces forbidigo's built-in defaults, so
+        # restate them before adding to them.
+        - pattern: '^(fmt\.Print(|f|ln)|print|println)$'
+        # Don't panic in production code. Verified that nothing else among the
+        # enabled linters catches this.
+        - pattern: '^panic$'
+  exclusions:
+    rules:
+      # There are a lot of globals that are technically mutable.
+      - linters: [gochecknoglobals, goconst]
+        path: internal/eliza/globals.go
+      # These tests assert against eliza's unexported response tables, so they
+      # live in the package under test rather than in an external test package.
+      - linters: [testpackage]
+        path: internal/eliza/eliza_test.go
+formatters:
+  enable:
+    - gci     # preferred over goimports
+    - gofmt   # preferred over gofumpt
+  settings:
+    gci:
+      sections:
+        - standard # Standard section: captures all standard packages.
+        - default # Default section: contains all imports that could not be matched to another section type.
+        - prefix(connect-examples-go) # Custom section: groups all imports with the specified Prefix.
