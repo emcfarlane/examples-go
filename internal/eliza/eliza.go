@@ -23,9 +23,12 @@ package eliza
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 )
+
+// Number of responses GetIntroResponses appends after the templated intros.
+const extraIntros = 2
 
 // Reply responds to a statement as a pyschotherapist might.
 func Reply(input string) (string, bool) {
@@ -33,18 +36,20 @@ func Reply(input string) (string, bool) {
 	if _, ok := goodbyeInputSet[input]; ok {
 		return randomElementFrom(goodbyeResponses), true
 	}
+
 	return lookupResponse(input), false
 }
 
 // GetIntroResponses returns a collection of introductory responses tailored to the given name.
 func GetIntroResponses(name string) []string {
-	intros := make([]string, 0, len(introResponses)+2)
+	intros := make([]string, 0, len(introResponses)+extraIntros)
 	for _, n := range introResponses {
 		intros = append(intros, fmt.Sprintf(n, name))
 	}
 
 	intros = append(intros, randomElementFrom(elizaFacts))
 	intros = append(intros, "How are you feeling today?")
+
 	return intros
 }
 
@@ -54,18 +59,22 @@ func lookupResponse(input string) string {
 		if len(matches) < 1 {
 			continue
 		}
+
 		response := randomElementFrom(responses)
 		// If the response has an entry point, reflect the input phrase (so "I"
 		// becomes "you").
 		if !strings.Contains(response, "%s") {
 			return response
 		}
+
 		if len(matches) > 1 {
 			fragment := reflect(matches[1])
 			response = fmt.Sprintf(response, fragment)
+
 			return response
 		}
 	}
+
 	return randomElementFrom(defaultResponses)
 }
 
@@ -81,9 +90,11 @@ func reflect(fragment string) string {
 			words[i] = reflectedWord
 		}
 	}
+
 	return strings.Join(words, " ")
 }
 
 func randomElementFrom(list []string) string {
-	return list[rand.Intn(len(list))] //nolint:gosec
+	// Picking a canned response doesn't need cryptographic randomness.
+	return list[rand.IntN(len(list))] //nolint:gosec
 }

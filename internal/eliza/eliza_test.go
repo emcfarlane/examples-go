@@ -23,6 +23,7 @@ import (
 
 func TestReplyToGoodbyes(t *testing.T) {
 	t.Parallel()
+
 	for _, input := range []string{"bye", "quit", "exit", "goodbye"} {
 		response, end := Reply(input)
 		assert.True(t, end)
@@ -32,7 +33,8 @@ func TestReplyToGoodbyes(t *testing.T) {
 
 func TestDefaultAnswers(t *testing.T) {
 	t.Parallel()
-	for i := 0; i < 3; i++ {
+
+	for i := range 3 {
 		response, _ := Reply("i have" + strings.Repeat(" ", i))
 		assert.Contains(t, defaultResponses, response)
 	}
@@ -40,6 +42,7 @@ func TestDefaultAnswers(t *testing.T) {
 
 func TestHello(t *testing.T) {
 	t.Parallel()
+
 	response, _ := Reply("hello eliza!")
 	assert.Contains(t, response, "Hello")
 
@@ -49,6 +52,7 @@ func TestHello(t *testing.T) {
 
 func TestReflectiveAnswers(t *testing.T) {
 	t.Parallel()
+
 	response, _ := Reply("i have a problem")
 	assert.Contains(t, response, "a problem")
 

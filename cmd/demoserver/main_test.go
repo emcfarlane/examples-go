@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,8 +33,11 @@ import (
 	"connect-examples-go/internal/gen/connectrpc/eliza/v1/elizav1connect"
 )
 
-func TestElizaServer(t *testing.T) {
-	t.Parallel()
+// newTestClients starts an Eliza server and returns one client per supported
+// protocol. The server is shut down when the test finishes.
+func newTestClients(t *testing.T) []elizav1connect.ElizaServiceClient {
+	t.Helper()
+
 	mux := http.NewServeMux()
 	srv := connect.NewServer()
 	elizav1connect.RegisterElizaServiceHandler(srv, NewElizaServer(0))
@@ -42,7 +46,7 @@ func TestElizaServer(t *testing.T) {
 	server := httptest.NewUnstartedServer(mux)
 	server.EnableHTTP2 = true
 	server.StartTLS()
-	defer server.Close()
+	t.Cleanup(server.Close)
 
 	connectClient := elizav1connect.NewElizaServiceClient(connect.NewClient(
 		connecthttp.NewTransport(server.Client(), server.URL),
@@ -50,71 +54,106 @@ func TestElizaServer(t *testing.T) {
 	grpcClient := elizav1connect.NewElizaServiceClient(connect.NewClient(
 		connecthttp.NewTransport(server.Client(), server.URL, connecthttp.WithGRPC()),
 	))
-	clients := []elizav1connect.ElizaServiceClient{connectClient, grpcClient}
 
-	t.Run("say", func(t *testing.T) {
-		for _, client := range clients {
-			result, err := client.Say(context.Background(), &elizav1.SayRequest{
-				Sentence: "Hello",
-			})
-			require.NoError(t, err)
-			assert.NotEmpty(t, result.GetSentence())
-		}
-	})
-	t.Run("converse", func(t *testing.T) {
-		for _, client := range clients {
-			sendValues := []string{"Hello!", "How are you doing?", "I have an issue with my bike", "bye"}
-			var receivedValues []string
-			grp, ctx := errgroup.WithContext(context.Background())
-			stream, err := client.Converse(ctx)
-			require.NoError(t, err)
-			grp.Go(func() error {
-				for _, sentence := range sendValues {
-					err := stream.Send(&elizav1.ConverseRequest{Sentence: sentence})
-					if err != nil {
-						return err
-					}
-				}
-				return stream.CloseSend()
-			})
-			grp.Go(func() error {
-				for {
-					msg, err := stream.Receive()
-					if errors.Is(err, io.EOF) {
-						break
-					}
-					assert.NotEmpty(t, msg.GetSentence())
-					receivedValues = append(receivedValues, msg.GetSentence())
-				}
-				return stream.Close()
-			})
-			require.NoError(t, grp.Wait())
-			assert.Equal(t, len(receivedValues), len(sendValues))
-		}
-	})
-	t.Run("introduce", func(t *testing.T) {
-		total := 0
-		for _, client := range clients {
-			request := &elizav1.IntroduceRequest{
-				Name: "Ringo",
-			}
-			stream, err := client.Introduce(context.Background(), request)
-			require.NoError(t, err)
-			var streamErr error
-			for {
-				_, err := stream.Receive()
+	return []elizav1connect.ElizaServiceClient{connectClient, grpcClient}
+}
+
+func TestElizaServerSay(t *testing.T) {
+	t.Parallel()
+
+	for _, client := range newTestClients(t) {
+		result, err := client.Say(context.Background(), &elizav1.SayRequest{
+			Sentence: "Hello",
+		})
+		require.NoError(t, err)
+		assert.NotEmpty(t, result.GetSentence())
+	}
+}
+
+func TestElizaServerConverse(t *testing.T) {
+	t.Parallel()
+
+	for _, client := range newTestClients(t) {
+		sendValues := []string{"Hello!", "How are you doing?", "I have an issue with my bike", "bye"}
+
+		var receivedValues []string
+
+		grp, ctx := errgroup.WithContext(context.Background())
+
+		stream, err := client.Converse(ctx)
+		require.NoError(t, err)
+
+		grp.Go(func() error {
+			for _, sentence := range sendValues {
+				err := stream.Send(&elizav1.ConverseRequest{Sentence: sentence})
 				if err != nil {
-					streamErr = err
+					return fmt.Errorf("send request: %w", err)
+				}
+			}
+
+			err := stream.CloseSend()
+			if err != nil {
+				return fmt.Errorf("close send: %w", err)
+			}
+
+			return nil
+		})
+		grp.Go(func() error {
+			for {
+				msg, err := stream.Receive()
+				if errors.Is(err, io.EOF) {
 					break
 				}
-				total++
+
+				assert.NotEmpty(t, msg.GetSentence())
+
+				receivedValues = append(receivedValues, msg.GetSentence())
 			}
-			if errors.Is(streamErr, io.EOF) {
-				streamErr = nil
+
+			err := stream.Close()
+			if err != nil {
+				return fmt.Errorf("close stream: %w", err)
 			}
-			assert.NoError(t, streamErr)
-			assert.NoError(t, stream.Close())
-			assert.Positive(t, total)
+
+			return nil
+		})
+		require.NoError(t, grp.Wait())
+		assert.Len(t, receivedValues, len(sendValues))
+	}
+}
+
+func TestElizaServerIntroduce(t *testing.T) {
+	t.Parallel()
+
+	total := 0
+
+	for _, client := range newTestClients(t) {
+		request := &elizav1.IntroduceRequest{
+			Name: "Ringo",
 		}
-	})
+
+		stream, err := client.Introduce(context.Background(), request)
+		require.NoError(t, err)
+
+		var streamErr error
+
+		for {
+			_, err := stream.Receive()
+			if err != nil {
+				streamErr = err
+
+				break
+			}
+
+			total++
+		}
+
+		if errors.Is(streamErr, io.EOF) {
+			streamErr = nil
+		}
+
+		assert.NoError(t, streamErr)
+		assert.NoError(t, stream.Close())
+		assert.Positive(t, total)
+	}
 }
